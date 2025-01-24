@@ -1,0 +1,8 @@
+name: cluster
+node_config:
+  region-0:
+    node-0:
+      external_ip: x.x.x.x
+      internal_ip: y.y.y.y
+      wg_port: 10000
+      mesh_ip: 192.168.0.2/32
