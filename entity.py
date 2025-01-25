@@ -1,5 +1,24 @@
+from typing import Optional, Literal
+
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Literal
+
+
+class NodeConfig(BaseModel):
+    name: str
+    external_ip: Optional[str] = Field(default=None)
+    internal_ip: str
+    wg_port: int
+    mesh_ip: str
+
+
+class RegionConfig(BaseModel):
+    name: str
+    nodes: list[NodeConfig]
+
+
+class ClusterConfig(BaseModel):
+    name: str
+    regions: list[RegionConfig]
 
 
 class Node(BaseModel):
@@ -34,6 +53,3 @@ class Node(BaseModel):
             f"PersistentKeepalive = 25"
         ])
         return "\n".join(result_list)
-
-
-NodeConfig = Dict[str, Dict[str, Node]]

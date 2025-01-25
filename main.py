@@ -2,7 +2,7 @@ from yaml import safe_load
 from typing import Tuple, Dict, List
 import subprocess
 from subprocess import CompletedProcess
-from entity import Node, NodeConfig
+from entity import Node, ClusterConfig
 import re
 
 mesh_ip_pattern = re.compile(r"^(\d{1,3}\.){3}\d{1,3}/\d{2}$")
@@ -11,8 +11,10 @@ mesh_ip_pattern = re.compile(r"^(\d{1,3}\.){3}\d{1,3}/\d{2}$")
 def validate_ip(ip: str) -> bool:
     if mesh_ip_pattern.match(ip):
         ip, mask = ip.split("/")
-        for i, str_num in enumerate(ip.split(".")):
-            num = int(str_num)
+        ip_splits = [int(num) for num in ip.split(".")]
+        if len(ip_splits) != 4:
+            return False
+        for i, num in enumerate(ip_splits):
             if i + num == 0 or not 0 <= num <= 255:
                 return False
         return int(mask) == 32
@@ -50,7 +52,7 @@ def get_keys(hostname: str) -> Tuple[str, str]:
     return public_key, private_key
 
 
-def validate_hostname(hostname: str) -> bool:
+def validate_host(hostname: str) -> bool:
     result = remote_run(hostname, "which wg > /dev/null && [ -d /etc/wireguard ]")
     if result.returncode != 0:
         print({"hostname": hostname, "stderr": result.stderr, "stdout": result.stdout, "code": result.returncode})
@@ -65,19 +67,22 @@ def remote_write(hostname: str, text: str, dst_file: str) -> bool:
 
 def main():
     with open("config.yaml") as f:
-        yaml: Dict[str, Dict[str, Dict[str, Dict[str, str | int]]] | str] = safe_load(f)
-    name: str = yaml["name"]
-    config: NodeConfig = {}
+        config_dict: dict = safe_load(f)
+    config = ClusterConfig.model_validate(config_dict)
+    name: str = config.name
     node_list: List[Node] = []
-    ip_set: set = set()
-    external_ip_set: set = set()
-    for region, node_dict in yaml["node_config"].items():
+    mesh_ip_set: set = set()
+    external_ip_set: set[tuple[str, int]] = set()
+
+    for region_config in config.regions:
+        region = region_config.name
         region_ip_set: set = set()
-        for hostname, node_config in node_dict.items():
-            if not validate_hostname(hostname):
+        for node_config in region_config.nodes:
+            hostname = node_config.name
+            if not validate_host(hostname):
                 continue
             public_key, private_key = get_keys(hostname)
-            node = Node.model_validate(node_config | {
+            node = Node.model_validate(node_config.model_dump(exclude_none=True) | {
                 "region": region,
                 "hostname": hostname,
                 "public_key": public_key,
@@ -86,14 +91,13 @@ def main():
 
             assert validate_ip(node.mesh_ip), node.mesh_ip
             assert node.internal_ip not in region_ip_set, node.internal_ip
-            assert node.mesh_ip not in ip_set, node.mesh_ip
+            assert node.mesh_ip not in mesh_ip_set, node.mesh_ip
             if node.external_ip:
                 assert (node.external_ip, node.wg_port) not in external_ip_set, node.hostname
             region_ip_set.add(node.internal_ip)
-            ip_set.add(node.mesh_ip)
+            mesh_ip_set.add(node.mesh_ip)
             external_ip_set.add((node.external_ip, node.wg_port))
 
-            config.setdefault(region, {})[hostname] = node
             node_list.append(node)
 
     for x in node_list:
