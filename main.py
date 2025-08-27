@@ -1,9 +1,11 @@
-from yaml import safe_load
-from typing import Tuple, Dict, List
+import re
 import subprocess
 from subprocess import CompletedProcess
+from typing import Tuple, List
+
+from yaml import safe_load
+
 from entity import Node, ClusterConfig
-import re
 
 mesh_ip_pattern = re.compile(r"^(\d{1,3}\.){3}\d{1,3}/\d{2}$")
 
